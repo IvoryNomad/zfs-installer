@@ -1,0 +1,16 @@
+version: 1
+config:
+    - type: physical
+      name: enp5s0
+      subnets:
+      - type: static
+        address: '192.168.226.49/24'
+        gateway: '192.168.226.1'
+      - type: ipv6_slaac
+    - type: nameserver
+      address:
+      - '192.168.225.6'
+      - '192.168.225.7'
+      search:
+      - 'ipa.norme.sh'
+

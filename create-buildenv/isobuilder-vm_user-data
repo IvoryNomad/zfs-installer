@@ -1,0 +1,93 @@
+#cloud-config
+hostname: isobuilder
+fqdn: isobuilder.ipa.norme.sh
+
+users:
+  - name: localadmin
+    groups: adm
+    shell: /bin/bash
+    lock_passwd: false
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIh3xF5/PwXtFQexMzoEbKI0dFE/Ddu2CdD+Y9OJX5HW ansible@normesh"
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIzfTYaJ7JmPK5ZqPVDvFAfsnwXb8wtJj+FzFbMCuLpV nenorman@normesh"
+
+write_files:
+  - path: /var/tmp/neovim-alts
+    content: |
+      editor                         manual   /usr/bin/nvim
+      ex                             manual   /usr/libexec/neovim/ex
+      rview                          manual   /usr/libexec/neovim/rview
+      rvim                           manual   /usr/libexec/neovim/rvim
+      vi                             manual   /usr/bin/nvim
+      view                           manual   /usr/libexec/neovim/view
+      vim                            manual   /usr/bin/nvim
+      vimdiff                        manual   /usr/libexec/neovim/vimdiff
+    owner: root:root
+    permissions: '0644'
+  - path: /etc/apt/sources.list.d/debian.sources
+    content: |
+      Types: deb deb-src
+      URIs: http://deb.debian.org/debian
+      Suites: bookworm bookworm-updates bookworm-backports
+      Components: main contrib non-free-firmware
+      Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+    owner: root:root
+    permissions: '0644'
+  - path: /etc/apt/sources.list.d/debian-security.sources
+    content: |
+      Types: deb deb-src
+      URIs: http://deb.debian.org/debian-security
+      Suites: bookworm-security
+      Components: main contrib non-free-firmware
+      Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+    owner: root:root
+    permissions: '0644'
+  - path: /var/tmp/isobuilder_setup.sh
+    content: |
+      cd "$HOME"
+      git clone https://github.com/IvoryNomad/zfs-installer.git
+      cd zfs-installer
+      touch hithere
+    owner: root:root
+    permissions: '0755'
+  - path: /var/tmp/isobuilder_research.sh
+    content: |
+      cd "$HOME"/zfs-installer
+      mkdir -p research-notes build-tests
+      cd research-notes
+      curl -sSOL https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.11.0-amd64-netinst.iso
+      mkdir -p /tmp/iso
+      sudo mount -o loop debian-12.11.0-amd64-netinst.iso /tmp/iso
+      # check installer kernel
+      echo "Installer kernel analysis:" > kernel-analysis.md
+      echo "Date: $(date)" >> kernel-analysis.md
+      file /tmp/iso/install.amd/vmlinuz >> kernel-analysis.md
+      # check ZFS compatability
+      echo "ZFS Package Compatibility Analysis" > zfs-compat-analysis.md
+      echo "Date: $(date)" >> zfs-compat-analysis.md
+      echo "Current kernel: $(uname -r)" >> zfs-compat-analysis.md
+      echo "Available ZFS versions:" >> zfs-compat-analysis.md
+      apt-cache policy zfsutils-linux >> zfs-compat-analysis.md
+      echo "More info:" >> zfs-compat-analysis.md
+      apt-cache policy zfsutils-linux zfs-dkms >> zfs-compat-analysis.md
+      apt-cache show zfsutils-linux | grep Version >> zfs-compat-analysis.md
+      apt-cache show zfs-dkms | grep Version >> zfs-compat-analysis.md
+      apt-cache depends zfs-dkms >> zfs-compat-analysis.md
+      apt-cache rdepends linux-headers-amd64 >> zfs-compat-analysis.md
+    owner: root:root
+    permissions: '0755'
+
+runcmd:
+  - cat /dev/null > /etc/apt/sources.list
+  - echo "zfs-dkms zfs-dkms/accept-license boolean true" | debconf-set-selections
+  - DEBIAN_FRONTEND=noninteractive apt update
+  - DEBIAN_FRONTEND=noninteractive apt upgrade
+  - DEBIAN_FRONTEND=noninteractive apt install --assume-yes --target-release bookworm-backports openssh-server-gssapi openssh-client-gssapi
+  - DEBIAN_FRONTEND=noninteractive apt install --assume-yes simple-cdd debian-cd build-essential git reprepro debootstrap neovim debconf-utils
+  - DEBIAN_FRONTEND=noninteractive apt install --assume-yes cpio genisoimage isolinux syslinux-utils curl
+  - update-alternatives --set-selections < /var/tmp/neovim-alts
+  - DEBIAN_FRONTEND=noninteractive apt install --assume-yes --no-install-recommends zfsutils-linux zfs-dkms dkms linux-headers-$(uname -r)
+  - su --login localadmin --command="/var/tmp/isobuilder_setup.sh"
+  - su --login localadmin --command="/var/tmp/isobuilder_research.sh"
+
